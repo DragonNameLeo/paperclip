@@ -1,7 +1,7 @@
 import { getAppDefinitionForApplicationKey, isConnectorFeatureEnabled } from "@paperclipai/shared";
 import { stableHash, descriptorHash } from "./tool-catalog-hash.js";
 import { assertProfileEntryInputs } from "./tool-profile-entry-validation.js";
-import { DAYTONA_TOOLS, daytonaClient, daytonaRisk, isDaytonaConnection, isDaytonaToolName } from "./daytona.js";
+import { NATIVE_PROVIDER_SLUGS, nativeProviderCatalogFor, nativeProviderCatalogForSlug } from "./native-provider-catalogs.js";
 import { chatCredentialMutationLease } from "./chat-credential-mutation-lease.js";
 import { notifyChatEndpointWork } from "./chat-work-notifications.js";
 import { removeSlackRegistration } from "./chat-slack-registration-cleanup.js";
@@ -2420,7 +2420,8 @@ export function classifyRisk(
   if (sourceTemplateKey === "browser-use-cloud") {
     return BROWSER_USE_TOOLS.find(t => t.name === tool.name)?.annotations.readOnlyHint ? "read" : "destructive";
   }
-  if (sourceTemplateKey === "daytona") return daytonaRisk(tool.name);
+  const nativeProvider = nativeProviderCatalogForSlug(sourceTemplateKey);
+  if (nativeProvider) return nativeProvider.risk(tool.name);
   if (sourceTemplateKey === "railway") {
     const reviewed = railwayRisk(normalizedToolName);
     return reviewed === "read" && (annotations.readOnlyHint === false || annotations.writeHint === true) ? "write" : reviewed;
@@ -3752,7 +3753,7 @@ export function toolAccessService(
   function shouldQuarantineNewEntries(
     connection: typeof toolConnections.$inferSelect,
   ): boolean {
-    return isDaytonaConnection(connection) || asRecord(connection.config).quarantineNewEntries === true;
+    return Boolean(nativeProviderCatalogFor(connection)) || asRecord(connection.config).quarantineNewEntries === true;
   }
 
   function isAttentionHealthStatus(
@@ -7578,10 +7579,11 @@ export function toolAccessService(
     assertSupportedConnection(connection);
     await assertConnectorConnectionSetupEnabled(connection);
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections provide runtime authentication, not tool actions");
-    if (isDaytonaConnection(connection)) {
+    const nativeProvider = nativeProviderCatalogFor(connection);
+    if (nativeProvider) {
       const headers = credentialHeaders ?? await resolveCredentialHeaders(connection, actor);
-      await daytonaClient(headers, (url, init) => requestRemoteHttpEndpoint(new URL(url), init), asRecord(connection.config.methodConfig).organizationId).probe();
-      return DAYTONA_TOOLS;
+      await nativeProvider.probe(connection, headers, (url, init) => requestRemoteHttpEndpoint(new URL(url), init));
+      return nativeProvider.tools;
     }
     if (isBrowserUseConnection(connection)) {
       const headers = credentialHeaders ?? await resolveCredentialHeaders(connection, actor);
@@ -7740,7 +7742,7 @@ export function toolAccessService(
           });
         for (const grant of grantsToCheck)
           await refreshManagedGitHubGrantAccess(connection, grant, actor);
-      } else if (isBrowserUseConnection(connection) || isDaytonaConnection(connection)) {
+      } else if (isBrowserUseConnection(connection) || nativeProviderCatalogFor(connection)) {
         await discoverTools(connection, undefined, actor);
       } else if (isAgentMailConnection(connection)) {
         await validateAgentMailConnection(connection);
@@ -7776,8 +7778,8 @@ export function toolAccessService(
           : config.sourceTemplateKey === "github" &&
           oauth.connectorProfile === "github.code"
           ? "GitHub account, installation, and repository access are available."
-          : isDaytonaConnection(connection)
-            ? "Daytona API access is connected."
+          : nativeProviderCatalogFor(connection)
+            ? `${nativeProviderCatalogFor(connection)!.name} API access is connected.`
           : isBrowserUseConnection(connection)
             ? "Browser Use API key is connected."
           : isAgentMailConnection(connection)
@@ -7901,9 +7903,9 @@ export function toolAccessService(
     const existingByName = new Map(
       existingRows.map((entry) => [entry.toolName, entry]),
     );
-    const nativeDaytona = isDaytonaConnection(connection);
+    const nativeProvider = Boolean(nativeProviderCatalogFor(connection));
     if (connection.config.sourceTemplateKey === "google-workspace"
-      || nativeDaytona || isRemoteMcpConnectorMethod(connection.config.sourceTemplateKey, connection.config.connectionMethodKey)) {
+      || nativeProvider || isRemoteMcpConnectorMethod(connection.config.sourceTemplateKey, connection.config.connectionMethodKey)) {
       const discoveredNames = new Set(descriptors.map((descriptor) => descriptor.name));
       // The catalog is shared, but discovery uses only the caller's grant. A
       // narrower personal consent must not remove actions another active grant
@@ -7921,13 +7923,13 @@ export function toolAccessService(
       }
       // Preserve only consent-filtered actions, not failed-service catalogs or
       // tools a successful, sufficiently authorized discovery actually removed.
-      const removedStatus = nativeDaytona ? "removed" : "disabled";
+      const removedStatus = nativeProvider ? "removed" : "disabled";
       const removedIds = existingRows.filter((entry) => !discoveredNames.has(entry.toolName) && entry.status !== removedStatus
         && !(otherWorkspaceGrants.some((scopes) => isGoogleWorkspaceToolGranted(entry.toolName, scopes))
           && !isGoogleWorkspaceToolGranted(entry.toolName, selectedWorkspaceScopes)
           && !unavailableServices.includes(googleWorkspaceToolTarget(entry.toolName)?.service ?? ""))).map((entry) => entry.id);
       if (removedIds.length) await publish(tx => tx.update(toolCatalogEntries)
-        .set({ status: removedStatus, quarantineReason: nativeDaytona ? "provider_tool_removed" : "mcp_tool_removed", updatedAt: refreshedAt })
+        .set({ status: removedStatus, quarantineReason: nativeProvider ? "provider_tool_removed" : "mcp_tool_removed", updatedAt: refreshedAt })
         .where(and(eq(toolCatalogEntries.companyId, connection.companyId), eq(toolCatalogEntries.connectionId, connection.id), inArray(toolCatalogEntries.id, removedIds))));
     }
     // Retired native actions are absent from discovery, but old catalog rows
@@ -7965,7 +7967,7 @@ export function toolAccessService(
         ? googleProfileValue
         : null;
     const preserveReviewedCatalog =
-      (isRailwayEndpoint(connection.config.url) || sourceTemplateKey === "enterpret" || isDaytonaConnection(connection)) &&
+      (isRailwayEndpoint(connection.config.url) || sourceTemplateKey === "enterpret" || nativeProvider) &&
       existingRows.length > 0;
     const quarantineOnRefresh =
       (!refreshOptions.enableAllByDefault || preserveReviewedCatalog) &&
@@ -7987,7 +7989,7 @@ export function toolAccessService(
         quarantineOnRefresh &&
         (!existing || changed) &&
         existing?.status !== "disabled" &&
-        (!safeDefault || riskLevel !== "read" || nativeDaytona);
+        (!safeDefault || riskLevel !== "read" || nativeProvider);
       const providerPermanentlyBlocked = Boolean(
         googleProfile &&
         !isGoogleWorkspaceToolAllowed(googleProfile, descriptor),
@@ -8044,7 +8046,7 @@ export function toolAccessService(
     const updatedEntries = descriptors.map(descriptor => toCatalogEntry(catalogByName.get(descriptor.name)!));
 
     const preserveQuarantine =
-      isRailwayEndpoint(connection.config.url) || sourceTemplateKey === "enterpret" || isDaytonaConnection(connection);
+      isRailwayEndpoint(connection.config.url) || sourceTemplateKey === "enterpret" || Boolean(nativeProviderCatalogFor(connection));
     const normalizedConfig = preserveQuarantine
       ? { ...connection.config, quarantineNewEntries: true }
       : refreshOptions.enableAllByDefault
@@ -12979,7 +12981,7 @@ export function toolAccessService(
           // Grant-backed setup keeps the full discovered catalog selectable;
           // the wizard projects the app's action defaults into policies at
           // finish time instead of using catalog quarantine as access state.
-          quarantineNewEntries: ["railway", "enterpret", "daytona"].includes(galleryEntry.slug),
+          quarantineNewEntries: ["railway", "enterpret", ...NATIVE_PROVIDER_SLUGS].includes(galleryEntry.slug),
           ...(remoteMcpConnector ? {
             mcpSessionRequired: true,
             mcpAuthMode: input.authMode ?? "auto",
@@ -13307,7 +13309,7 @@ export function toolAccessService(
                 applicationKey: `app-gallery:${galleryEntry?.slug ?? "link"}:${randomUUID()}`,
                 name: applicationName,
                 description: safeApplicationDescription,
-                type: transport === "rest_api" && ["browser-use-cloud", "daytona"].includes(galleryEntry?.slug ?? "") ? "rest_api" : transport === "mcp_remote" ? "mcp_http" : "mcp_stdio",
+                type: transport === "rest_api" && ["browser-use-cloud", ...NATIVE_PROVIDER_SLUGS].includes(galleryEntry?.slug ?? "") ? "rest_api" : transport === "mcp_remote" ? "mcp_http" : "mcp_stdio",
                 status: "draft",
                 metadata: galleryEntry
                   ? {
@@ -18548,7 +18550,7 @@ export function toolAccessService(
             companyId,
             applicationKey: normalizeKey(input.applicationName ?? input.name),
             name: input.applicationName ?? input.name,
-            type: isBrowserUseConnection({ transport, config }) || isDaytonaConnection({ transport, config }) ? "rest_api" : transport === "mcp_remote" ? "mcp_http" : "mcp_stdio",
+            type: isBrowserUseConnection({ transport, config }) || nativeProviderCatalogFor({ transport, config }) ? "rest_api" : transport === "mcp_remote" ? "mcp_http" : "mcp_stdio",
             status: "active",
             metadata: {},
           })
@@ -19610,18 +19612,18 @@ export function toolAccessService(
         .where(eq(toolCatalogEntries.connectionId, connection.id))
         .orderBy(desc(toolCatalogEntries.updatedAt));
       // Native provider catalogs change with the deployed code. Upgrade saved
-      // Daytona connections too; their first small catalog must not survive
-      // merely because REST discovery has no remote MCP cache timer.
-      const nativeDaytona = isDaytonaConnection(connection);
+      // connections too; an earlier catalog must not survive merely because
+      // REST discovery has no remote MCP cache timer.
+      const nativeProvider = nativeProviderCatalogFor(connection);
       const rowsByName = new Map(rows.map((row) => [row.toolName, row]));
-      const daytonaCatalogChanged = nativeDaytona && connection.status === "active" && (
-        rows.some((row) => row.status !== "removed" && !isDaytonaToolName(row.toolName))
-        || DAYTONA_TOOLS.some((tool) => {
+      const nativeCatalogChanged = Boolean(nativeProvider) && connection.status === "active" && (
+        rows.some((row) => row.status !== "removed" && !nativeProvider!.isToolName(row.toolName))
+        || nativeProvider!.tools.some((tool) => {
           const existing = rowsByName.get(tool.name);
-          return !existing || existing.versionHash !== descriptorHash(tool, daytonaRisk(tool.name));
+          return !existing || existing.versionHash !== descriptorHash(tool, nativeProvider!.risk(tool.name));
         })
       );
-      const cacheExpired = daytonaCatalogChanged || (
+      const cacheExpired = nativeCatalogChanged || (
         connection.transport === "mcp_remote" &&
         connection.status !== "archived" &&
         (rows.length === 0 ||
@@ -19631,7 +19633,7 @@ export function toolAccessService(
       if (cacheExpired) {
         try {
           await singleFlight(catalogRefreshFlights, connection.id, () =>
-            refreshCatalog(connection.id, nativeDaytona && actor ? actor : {
+            refreshCatalog(connection.id, nativeProvider && actor ? actor : {
               actorType: "system",
               actorId: "tool_catalog_cache",
             }),
@@ -19651,7 +19653,7 @@ export function toolAccessService(
       // Even failed discovery must not keep retired native tools visible.
       // Their database rows remain available to historical invocation records.
       return rows
-        .filter((row) => !nativeDaytona || (row.status !== "removed" && isDaytonaToolName(row.toolName)))
+        .filter((row) => !nativeProvider || (row.status !== "removed" && nativeProvider.isToolName(row.toolName)))
         .map((row) => toCatalogEntryForConnection(row, connection));
     },
 
@@ -20557,7 +20559,8 @@ export function toolAccessService(
         input.connectionId,
         input.companyId,
       );
-      if (isDaytonaConnection(connection)) throw forbidden("Daytona credentials stay in the governed tool gateway and cannot be exported.");
+      const nativeProvider = nativeProviderCatalogFor(connection);
+      if (nativeProvider) throw forbidden(`${nativeProvider.name} credentials stay in the governed tool gateway and cannot be exported.`);
       if (isBrowserUseConnection(connection)) throw forbidden("Browser Use credentials stay in the governed tool gateway and cannot be exported.");
       if (connection.connectionPurpose === "ai") throw unprocessable("AI credentials are available only through the runtime resolver");
       const application = await getConnectionApplication(connection);

@@ -123,6 +123,13 @@ checks the catalog, password field, access controls, and optional organization
 pin. It does not submit a key or qualify a real provider account. See
 [Daytona](../../doc/connections/DAYTONA.md) for API-key authority and OAuth limits.
 
+Unikraft follows the same key/access wizard. Setup asks only for the API token;
+the default metro is an optional select under Advanced, and each action can name
+another published metro. [Unikraft browser setup](../../tests/e2e/unikraft-connector.spec.ts)
+checks the catalog, password field, access controls and the advanced metro. It
+does not submit a token or qualify a real provider account. See
+[Unikraft](../../doc/connections/UNIKRAFT.md) for token authority and metros.
+
 ### `mcp-link`
 
 Automated: AppsConnect's generic MCP cases cover probe-driven auth, private or
