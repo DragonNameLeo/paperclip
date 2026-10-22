@@ -66,7 +66,7 @@ export function AgentBulkRoster({ companyId, agents, visibleAgents, renderAgent 
       setEditing(null);
       if (updatedIds.length) {
         setSelected(ids => ids.filter(id => !(complete ? editing.map(a => a.id) : updatedIds).includes(id)));
-        setNotice(`Updated ${updatedIds.length} ${getAdapterLabel(bulkAgentHarness(editing[0]))} agents.`);
+        setNotice(`Updated ${updatedIds.length} ${getAdapterLabel(bulkAgentHarness(editing[0]))} ${updatedIds.length === 1 ? "agent" : "agents"}.`);
       }
     }} /></Suspense>}
   </div>;

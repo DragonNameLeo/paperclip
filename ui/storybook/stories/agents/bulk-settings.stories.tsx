@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { useQueryClient } from "@tanstack/react-query";
 import { Routes, Route, useNavigate } from "@/lib/router";
 import { useCompany } from "@/context/CompanyContext";
@@ -27,13 +27,13 @@ function initialAgents(): Agent[] {
   });
 }
 
-function BulkSettingsPage({ failOne = false }: { failOne?: boolean }) {
+function BulkSettingsPage({ failOne = false, localHermes = false }: { failOne?: boolean; localHermes?: boolean }) {
   const [ready, setReady] = useState(false);
   const client = useQueryClient();
   const navigate = useNavigate();
   const { setSelectedCompanyId } = useCompany();
   useEffect(() => {
-    let agents = initialAgents();
+    let agents = localHermes ? initialAgents().slice(0, 1).map(a => ({ ...a, name: "Hermes", adapterType: "hermes_local" as const, runtimeConfig: {}, adapterConfig: { model: "provider/old-model" } })) : initialAgents();
     let failed = false;
     const previous = window.fetch;
     window.fetch = async (input, init) => {
@@ -63,7 +63,7 @@ function BulkSettingsPage({ failOne = false }: { failOne?: boolean }) {
     navigate("/PAP/agents/all", { replace: true });
     setReady(true);
     return () => { window.fetch = previous; };
-  }, [client, navigate, setSelectedCompanyId, failOne]);
+  }, [client, navigate, setSelectedCompanyId, failOne, localHermes]);
   return ready ? <PluginLauncherProvider><Routes><Route path="/:companyPrefix" element={<Layout />}><Route path="agents/all" element={<Agents />} /></Route></Routes></PluginLauncherProvider> : null;
 }
 
@@ -72,7 +72,7 @@ const meta = {
   component: BulkSettingsPage,
   parameters: { layout: "fullscreen", initialEntries: ["/PAP/agents/all"], paperclip: {
     capabilities: ["agents/organization", "agents/instructions"], implementation: "production", boundary: "fixtures",
-    notes: "Actual Agents page, bulk roster, sheet, account picker, model intersection and narrow PATCH client. HTTP accounts/catalogs/writes are synthetic, including one transient failure. Does not establish live provider credential validity or database persistence. The original approved proposal remains in Design proposals.",
+    notes: "Actual Agents page, bulk roster, sheet, account picker, model intersection and narrow PATCH client. HTTP accounts/catalogs/writes are synthetic, including one transient failure and an empty local Hermes catalog. Does not establish live provider credential validity or database persistence. The original approved proposal remains in Design proposals.",
   } },
 } satisfies Meta<typeof BulkSettingsPage>;
 export default meta;
@@ -100,7 +100,7 @@ export const ModelJourney: Story = { play: async ({ canvasElement }) => {
 } };
 export const ConnectionJourney: Story = { play: async ({ canvasElement }) => {
   const screen = await selectCodex(canvasElement, true);
-  await expect(await screen.findByText("1 other selected agents won’t change.")).toBeVisible();
+  await expect(await screen.findByText("1 other selected agent won’t change.")).toBeVisible();
   await userEvent.click(screen.getByRole("checkbox", { name: "Change connection" }));
   await userEvent.click(await screen.findByRole("combobox", { name: "Connection" }));
   await userEvent.click(screen.getByRole("option", { name: "OpenAI · Production" }));
@@ -118,6 +118,22 @@ export const RetryJourney: Story = { args: { failOne: true }, play: async ({ can
   await expect(screen.getByRole("button", { name: "Update 4 agents" })).toBeEnabled();
   await userEvent.click(screen.getByRole("button", { name: "Update 4 agents" }));
   await expect(await screen.findByText("3 updated · 1 couldn’t be saved")).toBeVisible();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Retry 1 agent" })).toBeEnabled());
   await userEvent.click(screen.getByRole("button", { name: "Retry 1 agent" }));
   await expect(await within(canvasElement).findByText("Updated 4 Codex agents.")).toBeVisible();
+} };
+
+export const ManualModelJourney: Story = { args: { localHermes: true }, play: async ({ canvasElement }) => {
+  const page = within(canvasElement);
+  await userEvent.click(await page.findByRole("checkbox", { name: "Select Hermes" }));
+  await userEvent.click(page.getByRole("button", { name: "Edit connection & model" }));
+  const screen = within(canvasElement.ownerDocument.body);
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Change default model" }));
+  await userEvent.click(screen.getByRole("button", { name: "Model" }));
+  await userEvent.type(await screen.findByPlaceholderText("Search models... (type to create)"), "provider/custom-model");
+  await userEvent.click(screen.getByRole("option", { name: "Use manual model provider/custom-model" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Update 1 agent" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "Update 1 agent" }));
+  await expect(await page.findByText("Updated 1 Hermes agent.")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select Hermes" }).closest("tr")!).toHaveTextContent("provider/custom-model");
 } };
