@@ -10,6 +10,7 @@ Each fix is an upstream fix, a fix proposed upstream, or a packaging fix for git
 | Git-ref installs write the root pnpm overrides as npm overrides in the payload, so the Claude ACP bridge gets `@anthropic-ai/claude-agent-sdk` 0.3.286 | Refs #13889. Master fixes it with #15912 |
 | Hide the adapter execution timeout notice in nice transcripts | Proposed upstream (refs #716, #11262) |
 | `build-npm.sh` stages `server/ui-dist` and the skills for git-ref installs | Refs #17063, #13928 |
+| Staged bundled manifests drop `prepack`, `postpack`, and `prepare`, because git-ref installs run `npm pack` on them without `--ignore-scripts` | Not reported upstream yet |
 
 ## Install
 
