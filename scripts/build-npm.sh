@@ -77,6 +77,14 @@ node "$REPO_ROOT/scripts/prepare-npm-readme.mjs" \
   "$CLI_DIR/README.md" \
   "$README_ASSET_REF"
 
+# Git-ref installs pack the workspace packages right after this script without
+# running scripts/release.sh, so stage the same packaging inputs here.
+PAPERCLIP_RELEASE_REUSE_UI_DIST=1 bash "$REPO_ROOT/scripts/prepare-server-ui-dist.sh"
+for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do
+  rm -rf "$REPO_ROOT/$pkg_dir/skills"
+  cp -r "$REPO_ROOT/skills" "$REPO_ROOT/$pkg_dir/skills"
+done
+
 # ── Step 6: Summary ───────────────────────────────────────────────────────────
 BUNDLE_SIZE=$(wc -c < "$DIST_DIR/index.js" | xargs)
 echo "  [6/6] Build verification..."
