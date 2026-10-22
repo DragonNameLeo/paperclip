@@ -28,6 +28,12 @@ export function materializePublishManifest(pkg) {
   }
 
   delete publishManifest.publishConfig;
+  if (publishManifest.scripts) {
+    const scripts = { ...publishManifest.scripts };
+    for (const name of ["prepack", "postpack", "prepare"]) delete scripts[name];
+    if (Object.keys(scripts).length > 0) publishManifest.scripts = scripts;
+    else delete publishManifest.scripts;
+  }
   return publishManifest;
 }
 
