@@ -74,6 +74,8 @@ vi.mock("../context/SidebarContext", () => ({
   useSidebar: () => ({ isMobile: mockSidebarState.isMobile }),
 }));
 
+vi.mock("../api/ai-connections", () => ({ aiConnectionsApi: { list: vi.fn(async () => ({ currentUserId: "board", canManageConnections: true, connections: [] })) } }));
+
 vi.mock("../api/agents", () => ({
   agentsApi: mockAgentsApi,
 }));
@@ -458,7 +460,7 @@ describe("Agents", () => {
 
     // The heartbeat cell must render on a single line so full dates like
     // "Apr 30, 2026" never wrap (PAP-85 defect #2).
-    const heartbeatCell = container.querySelector(".whitespace-nowrap.w-24");
+    const heartbeatCell = container.querySelector('[title="Last heartbeat"]');
     expect(heartbeatCell).not.toBeNull();
     expect(heartbeatCell?.textContent).not.toContain("\n");
   });
@@ -539,7 +541,7 @@ describe("Agents", () => {
     expect(row).not.toBeNull();
     expect(row?.querySelector(".sm\\:hidden")).toBeNull();
     expect(row?.querySelector(".hidden.sm\\:flex")).not.toBeNull();
-    expect(row?.querySelector(".flex-1.hidden.\\@5xl\\:block")).not.toBeNull();
+
     expect(row?.classList.contains("text-foreground/55")).toBe(false);
     expect(row?.classList.contains("sm:text-foreground/55")).toBe(true);
     const name = row?.querySelector("span[title='Paperclip Engineer With A Much Longer Display Name']");
@@ -884,7 +886,7 @@ describe("Agents", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).not.toContain("1 agent");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
     expect(mockBuiltInAgentsApi.list).toHaveBeenCalledWith("company-1");
     expect(container.textContent).toContain("Built-in");
     expect(container.textContent).toContain("Briefs Agent");
@@ -893,35 +895,18 @@ describe("Agents", () => {
     expect(mockRouterState.navigate).not.toHaveBeenCalledWith("/agents/all", { replace: true });
   });
 
-  it("gives list-view rows a fixed-width title so meta columns align (PAP-86)", async () => {
+  it("selects visible agents without navigating and exposes the harness edit action", async () => {
     root = createRoot(container);
-    await act(async () => {
-      renderAgentsView(root, queryClient);
-    });
+    await act(async () => { renderAgentsView(root, queryClient); });
     await flushReact();
     await flushReact();
-
-    // Keep the list view selected before checking its aligned metadata columns.
-    const listToggle = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.querySelector("svg.lucide-list"),
-    );
-    expect(listToggle).toBeDefined();
-    await act(async () => {
-      listToggle!.click();
-    });
-    await flushReact();
-
-    // The title cell carries a constant width in a wide container, not a
-    // content-sized `min-w-(--sz-7rem)`, so the `meta` group starts at the same
-    // x on every row and the model + timestamp columns line up vertically.
-    // In narrower containers metadata is hidden and the title flexes (`flex-1`)
-    // instead, so the shrink-0 trailing actions can't squeeze the agent name
-    // to zero width on mobile.
-    const titleCell = container.querySelector(".\\@5xl\\:w-56");
-    expect(titleCell).not.toBeNull();
-    expect(titleCell?.textContent).toContain("Alpha");
-    expect(titleCell?.classList.contains("flex-1")).toBe(true);
-    expect(container.querySelector(".min-w-\\(--sz-7rem\\)")).toBeNull();
+    const checkbox = container.querySelector<HTMLButtonElement>('[aria-label="Select Alpha"]');
+    expect(checkbox).not.toBeNull();
+    await act(async () => { checkbox!.click(); });
+    expect(container.querySelector('[aria-label="Bulk actions"]')?.textContent).toContain("1 selected");
+    expect(container.textContent).toContain("Edit connection & model");
+    expect(mockRouterState.navigate).not.toHaveBeenCalled();
+    expect(Array.from(container.querySelectorAll("th")).map(cell => cell.textContent)).toEqual(["", "Agent", "Harness", "Connection", "Default model"]);
   });
 
   it.each([

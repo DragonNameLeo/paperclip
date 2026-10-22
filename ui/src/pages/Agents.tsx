@@ -1,4 +1,5 @@
 import { PrimaryAgentIndicator } from "@/components/primary-agent/PrimaryAgentPresentation";
+import { AgentBulkRoster } from "@/components/agents/AgentBulkRoster";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
@@ -386,7 +387,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         key={agent.id}
         title={agent.name}
         titleAccessory={<PrimaryAgentIndicator agentId={agent.id} companyId={agent.companyId} />}
-        titleClassName="flex-1 @5xl:flex-none @5xl:w-56"
+        titleClassName="flex-1"
         titleTextClassName="truncate"
         subtitleClassName="truncate"
         subtitle={`${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
@@ -401,28 +402,15 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         ) : (
           <AgentAvatar agent={agent} size={32} />
         )}
-        secondaryRow={builtInCluster && (
-          <div className="@5xl:hidden flex flex-wrap items-center gap-1.5">
+        secondaryRow={(builtInCluster || showEnvironmentColumn || agent.lastHeartbeatAt) && (
+          <div className="flex flex-wrap items-center gap-2">
             {builtInCluster}
+            {showEnvironmentColumn && <span className="text-xs text-muted-foreground" title={resolveRenderedEnvironment(agent.id).title}>
+              {resolveRenderedEnvironment(agent.id).label} · {resolveRenderedEnvironment(agent.id).detail}
+            </span>}
+            {agent.lastHeartbeatAt && <span className="text-xs text-muted-foreground" title="Last heartbeat">{relativeTime(agent.lastHeartbeatAt)}</span>}
           </div>
         )}
-        meta={
-          <div className="flex items-center gap-3">
-            {builtInCluster && (
-              <div className="hidden @5xl:flex items-center gap-1.5">
-                {builtInCluster}
-              </div>
-            )}
-            <div className="hidden @5xl:flex items-center gap-3">
-              <AgentMetaColumns
-                agent={agent}
-                environment={resolveRenderedEnvironment(agent.id)}
-                showEnvironment={showEnvironmentColumn}
-              />
-            </div>
-          </div>
-        }
-        metaSpacerClassName="hidden @5xl:block"
         trailing={
           <div className="flex items-center gap-3">
             {agentChat.enabled && <Button variant="ghost" size="sm" onClick={event => { event.preventDefault(); event.stopPropagation(); navigate(`/chats/${agentRouteRef(agent)}`); }}>Chat</Button>}
@@ -468,17 +456,13 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
       )}
 
       {/* List view */}
-      {effectiveView === "list" && filtered.length > 0 && (
-        <div>
-          {filtered.map(renderAgentRow)}
-        </div>
+      {effectiveView === "list" && agents && agents.length > 0 && (
+        <AgentBulkRoster key={selectedCompanyId} companyId={selectedCompanyId}
+          agents={agents.filter(agent => !HIDDEN_AGENT_STATUSES.has(agent.status))}
+          visibleAgents={filtered} renderAgent={renderAgentRow} />
       )}
 
-      {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No agents match your search and selected status.
-        </p>
-      )}
+
 
       {/* Org chart view */}
       {effectiveView === "org" && filteredOrg.length > 0 && (

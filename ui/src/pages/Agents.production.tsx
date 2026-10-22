@@ -1,4 +1,5 @@
 import { PrimaryAgentIndicator } from "@/components/primary-agent/PrimaryAgentPresentation";
+import { AgentBulkRoster } from "@/components/agents/AgentBulkRoster";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
@@ -380,7 +381,7 @@ export function Agents() {
         // columns line up vertically. Below xl the meta columns are hidden, so
         // the title flexes instead: a fixed width there let the shrink-0
         // trailing actions squeeze the name to zero width on mobile.
-        titleClassName="flex-1 xl:flex-none xl:w-56"
+        titleClassName="flex-1"
         titleTextClassName="whitespace-normal break-words xl:truncate xl:whitespace-nowrap"
         subtitleClassName="whitespace-normal break-words xl:truncate xl:whitespace-nowrap"
         subtitle={`${roleLabels[agent.role] ?? agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
@@ -395,30 +396,15 @@ export function Agents() {
         ) : (
           <AgentAvatar agent={agent} size={32} />
         )}
-        secondaryRow={
-          builtInCluster ? (
-            <div className="xl:hidden flex flex-wrap items-center gap-1.5">
-              {builtInCluster}
-            </div>
-          ) : undefined
-        }
-        meta={
-          <div className="flex items-center gap-3">
-            {builtInCluster && (
-              <div className="hidden xl:flex items-center gap-1.5">
-                {builtInCluster}
-              </div>
-            )}
-            <div className="hidden xl:flex items-center gap-3">
-              <AgentMetaColumns
-                agent={agent}
-                environment={resolveRenderedEnvironment(agent.id)}
-                showEnvironment={showEnvironmentColumn}
-              />
-            </div>
+        secondaryRow={(builtInCluster || showEnvironmentColumn || agent.lastHeartbeatAt) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {builtInCluster}
+            {showEnvironmentColumn && <span className="text-xs text-muted-foreground" title={resolveRenderedEnvironment(agent.id).title}>
+              {resolveRenderedEnvironment(agent.id).label} · {resolveRenderedEnvironment(agent.id).detail}
+            </span>}
+            {agent.lastHeartbeatAt && <span className="text-xs text-muted-foreground" title="Last heartbeat">{relativeTime(agent.lastHeartbeatAt)}</span>}
           </div>
-        }
-        metaSpacerClassName="hidden xl:block"
+        )}
         trailing={
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-3">
@@ -502,17 +488,13 @@ export function Agents() {
       )}
 
       {/* List view */}
-      {effectiveView === "list" && filtered.length > 0 && (
-        <div>
-          {filtered.map(renderAgentRow)}
-        </div>
+      {effectiveView === "list" && agents && agents.length > 0 && (
+        <AgentBulkRoster key={selectedCompanyId} companyId={selectedCompanyId}
+          agents={agents.filter(agent => !HIDDEN_AGENT_STATUSES.has(agent.status))}
+          visibleAgents={filtered} renderAgent={renderAgentRow} />
       )}
 
-      {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          No agents match the selected status.
-        </p>
-      )}
+
 
       {/* Org chart view */}
       {effectiveView === "org" && filteredOrg.length > 0 && (
