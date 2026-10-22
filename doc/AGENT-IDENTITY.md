@@ -108,6 +108,13 @@ retain their runtime delivery. Secret values remain in the child environment;
 the shell policy contains only variable names. Removing a configured variable
 removes its shell access at the next launch.
 
+Assigning a service credential through the adapter's environment grants the
+run's shell commands access to that credential. It is not a brokered credential
+that is hidden from the agent: a model-directed command can read it. Assign only
+credentials the run is authorized to use, with the service permissions it needs.
+The shell allowlist protects unassigned host and provider credentials; it does
+not isolate an assigned service credential from the run's own commands.
+
 Cloud customer-success inspection can consume this existing identity together
 with strict active-run authority. See [inspection support](CUSTOMER-SUCCESS-INSPECTION.md).
 No additional agent keypair or private-key distribution is introduced.
