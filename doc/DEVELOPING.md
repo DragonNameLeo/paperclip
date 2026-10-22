@@ -354,6 +354,9 @@ pending card.
 Use **Chat & Comments → Task Chat Unanswered Questions → Test Drive** to
 try a regular task question: dismiss it, reload, reopen its compact feed entry,
 and submit the preserved draft. The composer has no question pending badge.
+The **Completion review** story exercises the same dismissal and reopening
+behavior for review cards. Its dismissal save and decisions are simulated;
+server persistence and permission boundaries have separate regression tests.
 The demo uses real thread/form components with fixture response callbacks.
 The Agent Chat stories share the same component fixture.
 

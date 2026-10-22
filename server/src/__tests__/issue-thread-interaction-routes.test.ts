@@ -41,6 +41,7 @@ const mockInteractionService = vi.hoisted(() => ({
   submitItemVerdicts: vi.fn(),
   cancelQuestions: vi.fn(),
   skipInteraction: vi.fn(),
+  dismissInteraction: vi.fn(),
   withdrawInteraction: vi.fn(),
   recordSecretProposalExecutionResult: vi.fn(),
 }));
@@ -613,6 +614,20 @@ describe("issue thread interaction routes", () => {
       }),
     );
   }, 10_000);
+
+  it("records a board dismissal without resolving or waking, and denies agent dismissal", async () => {
+    mockInteractionService.dismissInteraction.mockResolvedValue({ id: "request-1", kind: "request_confirmation", status: "pending", dismissedAt: "2026-10-22T12:00:00Z" });
+    const path = "/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/request-1/dismiss";
+    const result = await request(await createApp()).post(path).send({});
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ status: "pending", dismissedAt: "2026-10-22T12:00:00Z" });
+    expect(mockInteractionService.dismissInteraction).toHaveBeenCalledWith(expect.objectContaining({ companyId: "company-1" }), "request-1", { userId: "local-board" });
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "issue.thread_interaction_dismissed" }));
+    expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+    mockInteractionService.dismissInteraction.mockClear();
+    expect((await request(await createApp({ type: "agent", agentId: CREATED_AGENT_ID, companyId: "company-1", runId: RUN_1 })).post(path).send({})).status).toBe(403);
+    expect(mockInteractionService.dismissInteraction).not.toHaveBeenCalled();
+  });
 
   it("normalizes a canonical-only mixed question form at the HTTP boundary", async () => {
     const questionSet = { schema: "paperclip.question_set.v1", questions: [

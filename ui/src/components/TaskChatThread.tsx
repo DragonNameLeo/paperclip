@@ -83,6 +83,7 @@ import {
 } from "@/components/task-chat/task-chat-model";
 import { TaskChatInteractionCard } from "@/components/task-chat/TaskChatInteractionCard";
 import { TaskChatProtocolCard } from "@/components/task-chat/TaskChatProtocolCard";
+import { TaskChatRequestHistoryContext } from "@/components/task-chat/TaskChatComposerTakeoverContext";
 import {
   interactionThreadAnchorMs,
   isSuppressedThreadInteraction,
@@ -425,6 +426,7 @@ export type TaskChatThreadProps = ComponentProps<typeof IssueChatThread> & {
   initialHistoryError?: boolean;
   onRetryInitialHistory?: () => void;
   onOpenSkill?: (skillId: string, name: string) => void;
+  onDismissInteraction?: (interaction: IssueThreadInteraction) => Promise<void>;
 };
 
 type PendingComposerInput =
@@ -2538,12 +2540,15 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     }
     return result;
   }, [interactions, pendingRuntimeRequest]);
-  // Questions already have an answerable history card, including
-  // when the user dismisses a fresh form without sending another message.
+  const { dismissedQuestionIds: dismissedInputIds, dismissQuestion: dismissInput } = useDismissedTaskQuestions(issueId, currentUserId);
+  const isInputDismissed = useCallback((input: PendingComposerInput) =>
+    input.kind === "durable"
+      ? Boolean(input.interaction.dismissedAt) || dismissedInputIds.has(input.interaction.id) || dismissedInputIds.has(input.key)
+      : dismissedInputIds.has(input.key), [dismissedInputIds]);
   const pendingReminderInputs = useMemo(() => pendingComposerInputs.filter(input =>
-    !(input.kind === "durable" && input.interaction.kind === "ask_user_questions")),
-  [pendingComposerInputs]);
-  const { dismissedQuestionIds, dismissQuestion } = useDismissedTaskQuestions(issueId, currentUserId);
+    !isInputDismissed(input) && !(input.kind === "durable" && input.interaction.kind === "ask_user_questions")),
+  [pendingComposerInputs, isInputDismissed]);
+  const [dismissError, setDismissError] = useState<string | null>(null);
   const latestUserComment = useMemo(() => comments
     .filter(comment => !comment.deletedAt && comment.authorUserId && !comment.authorAgentId && !comment.createdByRunId)
     .reduce<(typeof comments)[number] | null>((latest, comment) =>
@@ -2552,15 +2557,15 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   // A later message leaves a question answerable in history, without reopening
   // its form on every render or reload. Explicit selection can still reopen it.
   const currentPendingInputs = useMemo(() => pendingComposerInputs.filter(input =>
-    !(input.kind === "durable" && input.interaction.kind === "ask_user_questions"
-      && (dismissedQuestionIds.has(input.interaction.id) || (latestUserComment
-        && toMs(input.interaction.createdAt) < toMs(latestUserComment.createdAt))))),
-  [pendingComposerInputs, dismissedQuestionIds, latestUserComment]);
+    !isInputDismissed(input) && !(input.kind === "durable" && input.interaction.kind === "ask_user_questions"
+      && latestUserComment && toMs(input.interaction.createdAt) < toMs(latestUserComment.createdAt))),
+  [pendingComposerInputs, isInputDismissed, latestUserComment]);
   const currentPendingKeys = useMemo(() => new Set(currentPendingInputs.map(input => input.key)), [currentPendingInputs]);
   const [takeoverMode, setTakeoverMode] = useState<"open" | "normal">("open");
   const [selectedPendingKey, setSelectedPendingKey] = useState<string | null>(
     null,
   );
+  const explicitlyOpenedInputRef = useRef<string | null>(null);
   const knownPendingKeysRef = useRef<Set<string>>(new Set());
   const lastInputUserCommentRef = useRef(latestUserCommentId);
   useEffect(() => {
@@ -2574,7 +2579,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     lastInputUserCommentRef.current = latestUserCommentId;
     knownPendingKeysRef.current = currentKeys;
     setSelectedPendingKey((current) =>
-      current && currentKeys.has(current) && !(movedOn && !currentPendingKeys.has(current))
+      current && currentKeys.has(current)
+        && (currentPendingKeys.has(current) || explicitlyOpenedInputRef.current === current)
+        && !(movedOn && !currentPendingKeys.has(current))
         ? current
         : (currentPendingInputs[0]?.key ?? null),
     );
@@ -2653,7 +2660,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         setRunnerSubmissionPending(false);
         setSubmissionTakingLonger(false);
         if (selectedPendingInput?.kind === "durable" && selectedPendingInput.interaction.kind === "ask_user_questions") {
-          dismissQuestion(selectedPendingInput.interaction.id);
+          dismissInput(selectedPendingInput.interaction.id);
           setSelectedPendingKey(null);
           setTakeoverMode("normal");
         }
@@ -2663,7 +2670,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         throw error;
       }
     },
-    [hasAgentAssignee, onAdd, selectedPendingInput, dismissQuestion],
+    [hasAgentAssignee, onAdd, selectedPendingInput, dismissInput],
   );
   const optimisticRunnerStartup =
     hasAgentAssignee &&
@@ -2742,7 +2749,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   );
 
   const reopenToolReview = useCallback((interactionId: string) => {
-    setSelectedPendingKey(pendingComposerInputs.find(input => input.kind === "durable" && input.interaction.id === interactionId)?.key ?? `interaction:${interactionId}`);
+    const key = pendingComposerInputs.find(input => input.kind === "durable" && input.interaction.id === interactionId)?.key ?? `interaction:${interactionId}`;
+    explicitlyOpenedInputRef.current = key;
+    setSelectedPendingKey(key);
     setTakeoverMode("open");
   }, [pendingComposerInputs]);
 
@@ -2752,6 +2761,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         item={item}
         onReviewRequest={reopenToolReview}
         showUnansweredQuestion
+        showPendingRequest
         planDocument={planDocument}
         showPlanPreview={
           !threadOwnsPlanPreview(
@@ -2851,11 +2861,22 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           pendingCount: Math.max(1, pendingReminderInputs.length),
           content: takeoverContent,
           onDismiss: () => {
-            if (selectedPendingInput.kind === "durable" && selectedPendingInput.interaction.kind === "ask_user_questions") {
-              dismissQuestion(selectedPendingInput.interaction.id);
-              setSelectedPendingKey(null);
-            }
-            setTakeoverMode("normal");
+            void (async () => {
+              setDismissError(null);
+              try {
+                if (selectedPendingInput.kind === "durable") {
+                  await props.onDismissInteraction?.(selectedPendingInput.interaction);
+                  dismissInput(selectedPendingInput.interaction.id);
+                } else {
+                  dismissInput(selectedPendingInput.key);
+                }
+                explicitlyOpenedInputRef.current = null;
+                setSelectedPendingKey(null);
+                setTakeoverMode("normal");
+              } catch (error) {
+                setDismissError(error instanceof Error ? error.message : "Unable to dismiss this request. Try again.");
+              }
+            })();
           },
           onSkip: () => skipPendingInput(selectedPendingInput),
           onShowNext: showNextPendingInput,
@@ -2994,6 +3015,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   };
 
   return (
+    <TaskChatRequestHistoryContext.Provider value={issueId ?? "unknown"}>
     <TaskChatExpansionState.Provider value={expansionState.current}>
       <TaskChatScrollReady.Provider value={!historyPending || historyWaitExpired}>
         <TaskChatWindowScroll
@@ -3219,6 +3241,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                 {prepareInitialContent ? (
                   <>
                     {composerAccessory}
+                    {dismissError ? <p role="alert" className="text-sm text-destructive">{dismissError}</p> : null}
                     {tailTurnStatus ? (
                       <TaskChatTurnStatusIsland model={tailTurnStatus} />
                     ) : null}
@@ -3330,5 +3353,6 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         </TaskChatPresentationProvider>
       </TaskChatScrollReady.Provider>
     </TaskChatExpansionState.Provider>
+    </TaskChatRequestHistoryContext.Provider>
   );
 }
