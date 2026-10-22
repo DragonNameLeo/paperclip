@@ -77,18 +77,21 @@ export function glyphOf(artifact: LabArtifact): Glyph {
 /** The product's media kinds, which its filter tabs are named after. */
 export type MediaKind = "image" | "video" | "document" | "text" | "file";
 
+const TEXT_TYPES = new Set(["application/json", "application/xml", "application/markdown"]);
+
+/**
+ * The product's rule (server/src/services/company-artifacts.ts,
+ * `classifyMediaKind`): a task document is a Document; every file goes by its
+ * content type — images and video by theirs, text, JSON, XML and Markdown are
+ * Text, anything else is a File. So an attached `deck-guide.md` is Text while
+ * the task's own documents are Documents, and an XLSX model is a File.
+ */
 export function mediaKindOf(artifact: LabArtifact): MediaKind {
-  switch (artifact.kind) {
-    case "image":
-      return "image";
-    case "video":
-      return "video";
-    case "document":
-      return "document";
-    case "code":
-    case "sheet":
-      return "text";
-    default:
-      return "file";
-  }
+  if (artifact.kind === "document" && artifact.revision !== undefined) return "document";
+  const type = (artifact.contentType ?? "").toLowerCase();
+  if (type.startsWith("image/")) return "image";
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("text/") || TEXT_TYPES.has(type) || type.endsWith("+json") || type.endsWith("+xml")) return "text";
+  if (!type && (artifact.kind === "image" || artifact.kind === "video")) return artifact.kind;
+  return "file";
 }

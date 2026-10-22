@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
+import { installApiStub } from "@/artifact-directions/api-stub";
 import { DIRECTION_IDS, KIT_META, loadKit, type DirectionId, type DirectionKit } from "@/artifact-directions/kit";
 import { KindsSheet } from "@/artifact-directions/frames/KindsSheet";
 import { SURFACE_IDS, SurfaceView, type SurfaceId } from "@/artifact-directions/frames/SurfaceView";
@@ -7,7 +8,10 @@ import { SURFACE_IDS, SurfaceView, type SurfaceId } from "@/artifact-directions/
 /**
  * Every direction in the artifact-directions lab, switchable from Controls, so
  * two directions can be compared on the same surface without leaving
- * Storybook. Kits load on demand, the way the lab page loads them.
+ * Storybook. Kits load on demand, the way the lab page loads them, behind the
+ * lab's `/api/` stub: Today's shipped components fetch the fixtures through it
+ * (the stub is in place before the kit renders, and restored when the story
+ * unmounts or the direction changes).
  */
 
 type View = SurfaceId | "kinds";
@@ -17,12 +21,14 @@ type Args = { direction: DirectionId; view: View };
 function DirectionView({ direction, view }: Args) {
   const [kit, setKit] = useState<DirectionKit | null>(null);
   useEffect(() => {
+    const restoreFetch = installApiStub();
     let live = true;
     loadKit(direction).then((loaded) => {
       if (live) setKit(loaded);
     });
     return () => {
       live = false;
+      restoreFetch();
     };
   }, [direction]);
   if (!kit) return null;

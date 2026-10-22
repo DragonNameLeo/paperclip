@@ -35,12 +35,33 @@ describe("isPortrait", () => {
   });
 });
 
-describe("glyphOf and mediaKindOf", () => {
-  it("draws PDF as bars, audio with the music glyph, and sorts kinds into the filter tabs", () => {
+describe("glyphOf", () => {
+  it("draws PDF as bars and audio with the music glyph", () => {
     expect(glyphOf(testArtifact({ kind: "pdf" }))).toBe("bars");
     expect(glyphOf(testArtifact({ kind: "file", ext: "wav" }))).toBe(Music);
-    expect(mediaKindOf(testArtifact({ kind: "code" }))).toBe("text");
-    expect(mediaKindOf(testArtifact({ kind: "archive" }))).toBe("file");
+  });
+});
+
+describe("mediaKindOf", () => {
+  it("sorts a task document under Documents and an attached Markdown file under Text, as the product does", () => {
+    expect(mediaKindOf(testArtifact({ kind: "document", revision: 1, contentType: "text/markdown" }))).toBe("document");
+    expect(mediaKindOf(testArtifact({ kind: "document", filename: "deck-guide.md", contentType: "text/markdown" }))).toBe("text");
+  });
+
+  it("goes by content type for files: text, JSON and XML are Text, office files and archives are Files", () => {
+    expect(mediaKindOf(testArtifact({ kind: "sheet", contentType: "text/csv" }))).toBe("text");
+    expect(mediaKindOf(testArtifact({ kind: "code", contentType: "application/json" }))).toBe("text");
+    expect(mediaKindOf(testArtifact({ kind: "code", contentType: "image/svg+xml" }))).toBe("image");
+    expect(mediaKindOf(testArtifact({ kind: "code", contentType: "application/ld+json" }))).toBe("text");
+    expect(mediaKindOf(testArtifact({ kind: "sheet", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }))).toBe("file");
+    expect(mediaKindOf(testArtifact({ kind: "pdf", contentType: "application/pdf" }))).toBe("file");
+    expect(mediaKindOf(testArtifact({ kind: "archive", contentType: "application/zip" }))).toBe("file");
+    expect(mediaKindOf(testArtifact({ kind: "link" }))).toBe("file");
+  });
+
+  it("keeps images and video by their types, and by kind when a fixture has no type", () => {
+    expect(mediaKindOf(testArtifact({ kind: "image", contentType: "image/png" }))).toBe("image");
+    expect(mediaKindOf(testArtifact({ kind: "video", contentType: "video/webm" }))).toBe("video");
     expect(mediaKindOf(testArtifact({ kind: "video" }))).toBe("video");
   });
 });

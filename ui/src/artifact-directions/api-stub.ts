@@ -7,6 +7,7 @@ import { COMPANY } from "./fixtures";
  * reaches the network; everything else (fonts, assets) passes through.
  *
  * A direction that renders a real component registers the routes it needs.
+ * `installApiStub` returns a restore, so a story can scope the stub to itself.
  */
 
 /** Returns the JSON body for a path it owns, or `undefined` to pass. */
@@ -36,16 +37,35 @@ function respond(pathname: string, method: string): Response {
   return json({});
 }
 
-let installed = false;
+let holders = 0;
+let realFetch: typeof window.fetch | null = null;
+let stubFetch: typeof window.fetch | null = null;
 
-export function installApiStub(): void {
-  if (installed) return;
-  installed = true;
-  const realFetch = window.fetch.bind(window);
-  window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (!url.includes("/api/")) return realFetch(input as RequestInfo, init);
-    const { pathname } = new URL(url, window.location.origin);
-    return respond(pathname, (init?.method ?? "GET").toUpperCase());
-  }) as typeof window.fetch;
+/**
+ * Stands in for `/api/` until the returned function is called. The lab page
+ * installs once for its lifetime; a Storybook story installs on mount and
+ * restores on unmount. Nested installs share one stub, and the last restore
+ * puts the real `fetch` back — unless something else replaced it meanwhile.
+ */
+export function installApiStub(): () => void {
+  if (holders === 0) {
+    const original = window.fetch;
+    const real = original.bind(window);
+    realFetch = original;
+    stubFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.includes("/api/")) return real(input as RequestInfo, init);
+      const { pathname } = new URL(url, window.location.origin);
+      return respond(pathname, (init?.method ?? "GET").toUpperCase());
+    }) as typeof window.fetch;
+    window.fetch = stubFetch;
+  }
+  holders += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holders -= 1;
+    if (holders === 0 && realFetch && window.fetch === stubFetch) window.fetch = realFetch;
+  };
 }
