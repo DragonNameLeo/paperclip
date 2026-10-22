@@ -169,6 +169,31 @@ function payloadEntrypoint(payloadPath: string): string {
   return path.join(payloadPath, "node_modules", "paperclipai", "dist", "index.js");
 }
 
+export function npmOverridesFromPnpmOverrides(pnpmOverrides: Record<string, unknown> | undefined): Record<string, string | Record<string, string>> {
+  const overrides: Record<string, string | Record<string, string>> = {};
+  for (const [selector, version] of Object.entries(pnpmOverrides ?? {})) {
+    if (typeof version !== "string" || version === "-") continue;
+    const parts = selector.split(">");
+    if (parts.length > 2) continue;
+    const [parent, child] = parts;
+    const existing = overrides[parent];
+    const nested = typeof existing === "string" ? { ".": existing } : existing ?? {};
+    if (child === undefined) overrides[parent] = existing === undefined ? version : { ...nested, ".": version };
+    else overrides[parent] = { ...nested, [child]: version };
+  }
+  return overrides;
+}
+
+function writePayloadOverrides(checkoutPath: string, stagedPayload: string): void {
+  const rootPackagePath = path.join(checkoutPath, "package.json");
+  if (!fs.existsSync(rootPackagePath)) return;
+  const rootPackage = JSON.parse(fs.readFileSync(rootPackagePath, "utf8")) as { pnpm?: { overrides?: Record<string, unknown> } };
+  const overrides = npmOverridesFromPnpmOverrides(rootPackage.pnpm?.overrides);
+  if (Object.keys(overrides).length === 0) return;
+  fs.mkdirSync(stagedPayload, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(stagedPayload, "package.json"), `${JSON.stringify({ private: true, overrides }, null, 2)}\n`);
+}
+
 export async function smokePayload(payloadPath: string, expectedVersion: string, runCommand: CommandRunner): Promise<void> {
   const entrypoint = payloadEntrypoint(payloadPath);
   if (!fs.existsSync(entrypoint)) throw new Error(`Installed package is missing its CLI entrypoint: ${entrypoint}`);
@@ -299,6 +324,7 @@ export async function installGitPayload(repo: string, sha: string, runCommand: C
     if (!cliTarball || workspaceTarballs.length !== workspacePackages.length) {
       throw new Error(`Git install packaging produced ${workspaceTarballs.length} workspace tarballs; expected ${workspacePackages.length}.`);
     }
+    writePayloadOverrides(checkoutPath, stagedPayload);
     await runCommand("npm", ["install", "--prefix", stagedPayload, path.join(stagingRoot, cliTarball), ...workspaceTarballs.map((entry) => path.join(stagingRoot, entry)), "--no-audit", "--no-fund"], { cwd: stagingRoot, maxBuffer: 32 * 1024 * 1024 });
     await smokePayload(stagedPayload, metadata.version, runCommand);
     fs.renameSync(stagedPayload, payloadPath);

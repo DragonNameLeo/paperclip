@@ -6,6 +6,7 @@ import {
   type CommandRunner,
   installCommand,
   installGitPayload,
+  npmOverridesFromPnpmOverrides,
   resolveGitHubRef,
   resolveGitInstallRequest,
   resolveGitInstallWorkspacePackages,
@@ -186,6 +187,41 @@ describe("managed install commands", () => {
     }
     const uiPackCall = buildCalls.find(([file, , options]) => file === "corepack" && options?.env?.PAPERCLIP_RELEASE_REUSE_UI_DIST === "1");
     expect(uiPackCall).toBeDefined();
+  });
+
+  it("converts pnpm overrides to npm overrides", () => {
+    expect(npmOverridesFromPnpmOverrides({
+      "@scope/parent@1.0.0>@scope/child": "2.0.0",
+      rollup: ">=4.59.0",
+      react: "^19.2.8",
+      "react>loose-envify": "1.4.0",
+      removed: "-",
+      "a>b>c": "1.0.0",
+    })).toEqual({
+      "@scope/parent@1.0.0": { "@scope/child": "2.0.0" },
+      rollup: ">=4.59.0",
+      react: { ".": "^19.2.8", "loose-envify": "1.4.0" },
+    });
+    expect(npmOverridesFromPnpmOverrides(undefined)).toEqual({});
+  });
+
+  it("passes the root pnpm overrides to the npm payload install", async () => {
+    const sha = "e".repeat(40);
+    const checkoutRunCommand = createGitCheckoutRunCommand(sha);
+    let payloadManifest: unknown;
+    const runCommand = vi.fn(async (file: string, args: string[], options?: Parameters<CommandRunner>[2]) => {
+      if (file === "npm" && args[0] === "install") {
+        payloadManifest = JSON.parse(fs.readFileSync(path.join(args[args.indexOf("--prefix") + 1], "package.json"), "utf8"));
+      }
+      const result = await checkoutRunCommand(file, args, options);
+      if (file === "tar") {
+        const rootPackage = { pnpm: { overrides: { "@scope/parent@1.0.0>@scope/child": "2.0.0" } } };
+        fs.writeFileSync(path.join(args[args.indexOf("-C") + 1], "package.json"), JSON.stringify(rootPackage));
+      }
+      return result;
+    });
+    await installGitPayload("paperclipai/paperclip", sha, runCommand, resolveInstallStorePaths());
+    expect(payloadManifest).toEqual({ private: true, overrides: { "@scope/parent@1.0.0": { "@scope/child": "2.0.0" } } });
   });
 
   it("resolves the complete server workspace dependency closure in dependency order", () => {
