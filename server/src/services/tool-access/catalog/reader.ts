@@ -1,3 +1,4 @@
+import { restConnectorFor } from "../../connectors/rest-registry.js";
 import { singleFlight } from "../single-flight.js";
 import type { ActorInfo } from "../types.js";
 import { descriptorHash } from "../../tool-catalog-hash.js";
@@ -30,6 +31,8 @@ export function createToolCatalogReader(db: Db, options: { catalogCacheTtlMs?: n
       // Daytona connections too; their first small catalog must not survive
       // merely because REST discovery has no remote MCP cache timer.
       const nativeDaytona = isDaytonaConnection(connection);
+      const restConnector = restConnectorFor(connection);
+      const nativeRest = nativeDaytona || Boolean(restConnector);
       const rowsByName = new Map(rows.map((row) => [row.toolName, row]));
       const daytonaCatalogChanged = nativeDaytona && connection.status === "active" && (
         rows.some((row) => row.status !== "removed" && !isDaytonaToolName(row.toolName))
@@ -38,7 +41,14 @@ export function createToolCatalogReader(db: Db, options: { catalogCacheTtlMs?: n
           return !existing || existing.versionHash !== descriptorHash(tool, daytonaRisk(tool.name));
         })
       );
-      const cacheExpired = daytonaCatalogChanged || (
+      const restCatalogChanged = restConnector && connection.status === "active" && (
+        rows.some(row => row.status !== "removed" && !restConnector.tools.some(tool => tool.name === row.toolName))
+        || restConnector.tools.some(tool => {
+          const existing = rowsByName.get(tool.name);
+          return !existing || !restConnector.isCurrent(existing);
+        })
+      );
+      const cacheExpired = restCatalogChanged || daytonaCatalogChanged || (
         connection.transport === "mcp_remote" &&
         connection.status !== "archived" &&
         (rows.length === 0 ||
@@ -48,7 +58,7 @@ export function createToolCatalogReader(db: Db, options: { catalogCacheTtlMs?: n
       if (cacheExpired) {
         try {
           await singleFlight(catalogRefreshFlights, connection.id, () =>
-            refreshCatalog(connection.id, nativeDaytona && actor ? actor : {
+            refreshCatalog(connection.id, nativeRest && actor ? actor : {
               actorType: "system",
               actorId: "tool_catalog_cache",
             }),
@@ -68,7 +78,7 @@ export function createToolCatalogReader(db: Db, options: { catalogCacheTtlMs?: n
       // Even failed discovery must not keep retired native tools visible.
       // Their database rows remain available to historical invocation records.
       return rows
-        .filter((row) => !nativeDaytona || (row.status !== "removed" && isDaytonaToolName(row.toolName)))
+        .filter((row) => !nativeRest || (row.status !== "removed" && (restConnector ? restConnector.tools.some(tool => tool.name === row.toolName) : isDaytonaToolName(row.toolName))))
         .map((row) => toCatalogEntryForConnection(row, connection));
     }
   };

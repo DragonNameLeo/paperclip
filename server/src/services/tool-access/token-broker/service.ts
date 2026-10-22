@@ -1,3 +1,4 @@
+import { restConnectorFor } from "../../connectors/rest-registry.js";
 import { isDaytonaConnection } from "../../daytona.js";
 import { isBrowserUseConnection } from "../../browser-use-client.js";
 import { and, eq, sql } from "drizzle-orm";
@@ -58,6 +59,7 @@ export function createConnectionTokenBroker(db: Db, { now, secrets, policySvc, a
         input.connectionId,
         input.companyId,
       );
+      if (restConnectorFor(connection)) throw forbidden("Deployment connection credentials stay in the governed tool gateway and cannot be exported.");
       if (isDaytonaConnection(connection)) throw forbidden("Daytona credentials stay in the governed tool gateway and cannot be exported.");
       if (isBrowserUseConnection(connection)) throw forbidden("Browser Use credentials stay in the governed tool gateway and cannot be exported.");
       if (connection.connectionPurpose === "ai") throw unprocessable("AI credentials are available only through the runtime resolver");

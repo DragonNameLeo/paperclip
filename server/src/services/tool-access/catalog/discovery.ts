@@ -1,3 +1,4 @@
+import { restConnectorFor } from "../../connectors/rest-registry.js";
 import { assertSupportedConnection } from "../connections/setup-policy.js";
 import { vercelCredentialFor, vercelConnectResourcesFor } from "../vercel-credentials.js";
 import { connectionSetupUrl, connectionReconnectUrl } from "../identifiers.js";
@@ -426,6 +427,12 @@ export function createToolCatalogDiscovery(db: Db, { now, audit, secrets, creden
     assertSupportedConnection(connection);
     await assertConnectorConnectionSetupEnabled(connection);
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections provide runtime authentication, not tool actions");
+    const restConnector = restConnectorFor(connection);
+    if (restConnector) {
+      const headers = credentialHeaders ?? await resolveCredentialHeaders(connection, actor);
+      await restConnector.client(connection, headers, (url, init) => requestRemoteHttpEndpoint(new URL(url), init)).probe();
+      return restConnector.tools;
+    }
     if (isDaytonaConnection(connection)) {
       const headers = credentialHeaders ?? await resolveCredentialHeaders(connection, actor);
       await daytonaClient(headers, (url, init) => requestRemoteHttpEndpoint(new URL(url), init), asRecord(connection.config.methodConfig).organizationId).probe();

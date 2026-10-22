@@ -1,3 +1,4 @@
+import { restConnectorFor } from "../../connectors/rest-registry.js";
 import { isDaytonaConnection } from "../../daytona.js";
 import { googleWorkspaceToolTarget } from "@paperclipai/shared";
 import { BROWSER_USE_TOOLS } from "@paperclipai/shared";
@@ -291,5 +292,5 @@ export function isGoogleWorkspaceToolAllowed(
 export function shouldQuarantineNewEntries(
   connection: typeof toolConnections.$inferSelect,
 ): boolean {
-  return isDaytonaConnection(connection) || asRecord(connection.config).quarantineNewEntries === true;
+  return Boolean(restConnectorFor(connection)) || isDaytonaConnection(connection) || asRecord(connection.config).quarantineNewEntries === true;
 }

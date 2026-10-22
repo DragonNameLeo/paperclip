@@ -1,3 +1,4 @@
+import { restConnectorFor } from "../../connectors/rest-registry.js";
 import { assertSupportedConnection } from "../connections/setup-policy.js";
 import { connectionSetupUrl, connectionReconnectUrl } from "../identifiers.js";
 import { createGitHubGrantContinuity } from "../github-grant-continuity.js";
@@ -121,7 +122,7 @@ export function createConnectionHealth(db: Db, { now, audit, getConnectionRow, d
           });
         for (const grant of grantsToCheck)
           await refreshManagedGitHubGrantAccess(connection, grant, actor);
-      } else if (isBrowserUseConnection(connection) || isDaytonaConnection(connection)) {
+      } else if (isBrowserUseConnection(connection) || isDaytonaConnection(connection) || restConnectorFor(connection)) {
         await discoverTools(connection, undefined, actor);
       } else if (isAgentMailConnection(connection)) {
         await validateAgentMailConnection(connection);
@@ -157,6 +158,8 @@ export function createConnectionHealth(db: Db, { now, audit, getConnectionRow, d
           : config.sourceTemplateKey === "github" &&
           oauth.connectorProfile === "github.code"
           ? "GitHub account, installation, and repository access are available."
+          : restConnectorFor(connection)
+            ? `${restConnectorFor(connection)!.name} API access is connected.`
           : isDaytonaConnection(connection)
             ? "Daytona API access is connected."
           : isBrowserUseConnection(connection)
