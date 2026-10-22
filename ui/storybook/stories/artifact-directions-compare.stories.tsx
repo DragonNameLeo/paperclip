@@ -1,0 +1,63 @@
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useEffect, useState } from "react";
+import { DIRECTION_IDS, KIT_META, loadKit, type DirectionId, type DirectionKit } from "@/artifact-directions/kit";
+import { KindsSheet } from "@/artifact-directions/frames/KindsSheet";
+import { SURFACE_IDS, SurfaceView, type SurfaceId } from "@/artifact-directions/frames/SurfaceView";
+
+/**
+ * Every direction in the artifact-directions lab, switchable from Controls, so
+ * two directions can be compared on the same surface without leaving
+ * Storybook. Kits load on demand, the way the lab page loads them.
+ */
+
+type View = SurfaceId | "kinds";
+
+type Args = { direction: DirectionId; view: View };
+
+function DirectionView({ direction, view }: Args) {
+  const [kit, setKit] = useState<DirectionKit | null>(null);
+  useEffect(() => {
+    let live = true;
+    loadKit(direction).then((loaded) => {
+      if (live) setKit(loaded);
+    });
+    return () => {
+      live = false;
+    };
+  }, [direction]);
+  if (!kit) return null;
+  return view === "kinds" ? <KindsSheet kit={kit} /> : <SurfaceView kit={kit} surface={view} />;
+}
+
+const meta = {
+  title: "Explorations/Artifact directions/Compare",
+  component: DirectionView,
+  parameters: {
+    layout: "fullscreen",
+    docs: {
+      description: {
+        component:
+          "Pick a direction and a surface. Today is the shipped components fed with the lab's fixtures; 1–4 are the explored directions.",
+      },
+    },
+  },
+  argTypes: {
+    direction: {
+      control: { type: "select" },
+      options: DIRECTION_IDS,
+      labels: Object.fromEntries(DIRECTION_IDS.map((id) => [id, KIT_META[id].name])),
+      description: "Which direction's kit renders.",
+    },
+    view: {
+      control: { type: "select" },
+      options: [...SURFACE_IDS, "kinds"],
+      description: "Which surface, or the vocabulary sheet.",
+    },
+  },
+  args: { direction: "d4-hybrid", view: "gallery" },
+} satisfies Meta<typeof DirectionView>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const AnyDirection: Story = { name: "Any direction, any surface" };

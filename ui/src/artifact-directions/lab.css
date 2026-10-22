@@ -1,0 +1,15 @@
+@import "./paper-mono.css";
+
+/*
+ * Lab-wide type. Every monospace run in the lab — its toolbar, the sheet and
+ * board labels, task identifiers in the frames, and the kits — is Paper Mono,
+ * as on master. index.css defines `--font-mono` under `@theme inline`, so the
+ * `font-mono` utility carries the system stack inlined rather than `var()`;
+ * that is why the class is overridden here as well as the variable.
+ */
+:root {
+  --font-mono: "Paper Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.font-mono {
+  font-family: var(--font-mono);
+}
