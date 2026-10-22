@@ -36,15 +36,25 @@ function DirectionView({ direction, view }: Args) {
 }
 
 const meta = {
-  title: "Explorations/Artifact directions/Compare",
+  id: "design-artifact-directions-compare",
+  title: "Design proposals/Artifact directions/Compare",
   component: DirectionView,
   parameters: {
     layout: "fullscreen",
     docs: {
       description: {
         component:
-          "Pick a direction and a surface. Today is the shipped components fed with the lab's fixtures; 1–4 are the explored directions.",
+          "Pick a direction and a surface. Today is the shipped components fed with the lab's fixtures; 1–5 are the explored directions.",
       },
+    },
+    paperclip: {
+      capabilities: ["documents-artifacts/library", "documents-artifacts/work-products", "documents-artifacts/attachments"],
+      status: "proposed",
+      home: "design-proposals",
+      implementation: "prototype",
+      boundary: "fixtures",
+      exception: "Design exploration staged in the artifact directions lab: the shipped baseline and five proposed directions compared on static mocks of the task thread, the side panel and the Artifacts page.",
+      notes: "Controls pick a direction kit and a surface. Today mounts the shipped artifact components behind the lab's fetch stub with the acmehats fixture world; the other kits are lab components. Frames are static mocks of the product chrome; nothing here establishes production behaviour or access checks.",
     },
   },
   argTypes: {

@@ -25,7 +25,8 @@ import { SurfaceView } from "@/artifact-directions/frames/SurfaceView";
  */
 
 const meta = {
-  title: "Explorations/Artifact directions/4 · Hybrid",
+  id: "design-artifact-directions-hybrid",
+  title: "Design proposals/Artifact directions/4.Hybrid",
   parameters: {
     layout: "fullscreen",
     docs: {
@@ -33,6 +34,15 @@ const meta = {
         component:
           "The Hybrid direction on the three artifact surfaces (thread, side panel, Artifacts page), plus each of its five slots alone. Data is the lab's acmehats fixture world.",
       },
+    },
+    paperclip: {
+      capabilities: ["documents-artifacts/library", "documents-artifacts/work-products", "documents-artifacts/attachments"],
+      status: "proposed",
+      home: "design-proposals",
+      implementation: "prototype",
+      boundary: "fixtures",
+      exception: "Design exploration staged in the artifact directions lab: the Hybrid direction on static mocks of the task thread, the side panel and the Artifacts page, and each of its slots alone.",
+      notes: "Lab components only, fed with the acmehats fixture world; no live API requests. Surface stories render the kit inside the lab's static chrome mocks; slot stories render one kit slot at its product width. Nothing here establishes production behaviour.",
     },
   },
 } satisfies Meta;
