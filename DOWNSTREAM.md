@@ -11,6 +11,7 @@ Each fix is an upstream fix, a fix proposed upstream, or a packaging fix for git
 | Hide the adapter execution timeout notice in nice transcripts | Proposed upstream (refs #716, #11262) |
 | `build-npm.sh` stages `server/ui-dist` and the skills for git-ref installs | Refs #17063, #13928 |
 | Staged bundled manifests drop `prepack`, `postpack`, and `prepare`, because git-ref installs run `npm pack` on them without `--ignore-scripts` | Not reported upstream yet |
+| Staged bundled manifests pin each workspace dependency to its own version (`@paperclipai/plugin-sdk` is 1.0.0, not the server version) | Not reported upstream yet |
 
 ## Install
 
